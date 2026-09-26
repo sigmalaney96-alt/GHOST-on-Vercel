@@ -1,43 +1,56 @@
-// Load Google Sites page as main page on page load
+const uvPrefix = __uv$config.prefix;
+
+function stripUVFromUrl(url) {
+    if (!url) return url;
+
+    try {
+        if (url.includes(uvPrefix)) {
+            const encoded = url.split(uvPrefix).pop();
+            return __uv$config.decodeUrl(encoded);
+        }
+    } catch (err) {
+        return url;
+    }
+
+    return url;
+}
+
+function sanitizeNestedIframe(iframe) {
+    if (!(iframe instanceof HTMLIFrameElement)) return;
+    if (iframe.id === "iframeWindow") return;
+
+    const src = iframe.getAttribute("src");
+    if (!src) return;
+
+    const clean = stripUVFromUrl(src);
+    if (clean !== src) {
+        iframe.setAttribute("src", clean);
+    }
+}
+
 window.addEventListener("load", function() {
     let url = "https://sites.google.com/view/ghost-ubg";
-    iframeWindow.src = __uv$config.prefix + __uv$config.encodeUrl(url);
+    iframeWindow.src = uvPrefix + __uv$config.encodeUrl(url);
 });
 
-// Prevent nested iframes from being proxied
-window.addEventListener('message', function(event) {
-    // Check if the message is about an iframe trying to load through UV
-    if (event.data && event.data.type === 'iframe-load') {
-        // Load iframe without UV proxying
-        const iframe = event.source;
-        if (iframe) {
-            iframe.src = event.data.url;
-        }
-    }
-});
+document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll("iframe").forEach(sanitizeNestedIframe);
 
-// Intercept iframe src changes to prevent nested proxying
-document.addEventListener('DOMContentLoaded', function() {
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
-                const iframe = mutation.target;
-                if (iframe.tagName === 'IFRAME' && iframe !== document.getElementById('iframeWindow')) {
-                    // This is a nested iframe - don't let it get proxied
-                    const src = iframe.getAttribute('src');
-                    if (src && src.includes(__uv$config.prefix)) {
-                        // Remove UV proxying from nested iframes
-                        const decodedUrl = __uv$config.decodeUrl(src);
-                        iframe.src = decodedUrl;
-                    }
-                }
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (
+                mutation.type === "attributes" &&
+                mutation.attributeName === "src" &&
+                mutation.target.tagName === "IFRAME"
+            ) {
+                sanitizeNestedIframe(mutation.target);
             }
-        });
+        }
     });
 
     observer.observe(document.body, {
         subtree: true,
         attributes: true,
-        attributeFilter: ['src']
+        attributeFilter: ["src"]
     });
 });
